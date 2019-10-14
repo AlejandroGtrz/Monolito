@@ -127,7 +127,28 @@ def iniciar_cuestionario(current_user, cuestionario_id):
 @app.route('/cuestionario/resultados', methods=['GET'])
 @token_required
 def obtener_resultados(current_user):
-    usuario_cuestionarios=CuestionarioUsuario.query.filter_by(CuestionarioUsuario.id_usuario==current_user.id)
+    usuario_cuestionarios=CuestionarioUsuario.query.filter(CuestionarioUsuario.id_usuario==current_user.id).all()
+    lista=[]
+    for u in usuario_cuestionarios:
+        cuestionario=Cuestionario.query.filter(Cuestionario.id==u.id_usuario).first()
+        x={'titulo': cuestionario.titulo, 'preguntas': "" , 'puntuacion': ''}
+        preguntas=Pregunta.query.filter(Pregunta.id_cuestionario==cuestionario.id).all()
+        l=[]
+        for p in preguntas:
+            l2=[]
+            opciones=Opciones.query.filter(Opciones.id_pregunta==p.id).all()
+            respuesta_usuario=RespuestaUsuario.query.filter(RespuestaUsuario.id_cuestionario_usuario==u.id).filter(RespuestaUsuario.id_pregunta==p.id).first()
+            correcta='incorrecta'
+            if respuesta_usuario.valor>0:
+                correcta='correcta'
+            for o in opciones:
+                l2.append({'opcion': o.texto_opcion})
+            temp=Opciones.query.filter(Opciones.id==respuesta_usuario.id_opcion).first()
+            l.append({'pregunta': p.texto, 'opciones': l2, 'respuesta': temp.texto_opcion, 'resultado': correcta})
+        x['preguntas']=l
+        x['puntuacion']=u.puntuacion
+        lista.append(x)
+    return jsonify(lista)
 @app.route('/cuestionario/<id_cuestionario>', methods=['DELETE'])
 @token_required
 def borrar_cuestionario(current_user, id_cuestionario):
@@ -148,14 +169,15 @@ def actualizar_cuestionario(current_user, id_cuestionario):
 @token_required
 def responder_opcion(current_user):
     data=request.get_json()
-    id_opcion=data['id_opcion']
+    texto_opcion=data['opcion']
     id_usuariocuestionario=data['id_usuariocuestionario']
-    id_pregunta=data['id_pregunta']
-    opcion=Opciones.query.get_or_404(id_opcion)
+    texto_pregunta=data['pregunta']
     usuariocuestionario=CuestionarioUsuario.query.get_or_404(id_usuariocuestionario)
-    if RespuestaUsuario.query.filter(RespuestaUsuario.id_cuestionario_usuario==id_usuariocuestionario).filter(RespuestaUsuario.id_pregunta==id_pregunta).first() is not None:
+    pregunta=Pregunta.query.filter(Pregunta.id_cuestionario==usuariocuestionario.id_cuestionario).filter(Pregunta.texto==texto_pregunta).first()
+    opcion=Opciones.query.filter(Opciones.id_pregunta==pregunta.id).filter(Opciones.texto_opcion==texto_opcion).first()
+    if RespuestaUsuario.query.filter(RespuestaUsuario.id_cuestionario_usuario==id_usuariocuestionario).filter(RespuestaUsuario.id_pregunta==pregunta.id).first() is not None:
         return jsonify({'Mensaje': 'Pregunta ya contestada'})
-    nueva_respuesta=RespuestaUsuario(id_pregunta=id_pregunta,id_opcion=id_opcion,id_cuestionario_usuario=id_usuariocuestionario, valor=opcion.valor)
+    nueva_respuesta=RespuestaUsuario(id_pregunta=pregunta.id,id_opcion=opcion.id,id_cuestionario_usuario=id_usuariocuestionario, valor=opcion.valor)
     usuariocuestionario.puntuacion=usuariocuestionario.puntuacion+opcion.valor
     msg=''
     if opcion.valor<=0:
@@ -180,7 +202,6 @@ def login():
         token=jwt.encode({'public_id': user.public_id,'exp': datetime.datetime.utcnow()+datetime.timedelta(minutes=30)}, app.config['SECRET_KEY'], algorithm='HS256')
         return jsonify({'token': token.decode('UTF-8')})
     return jsonify({'token': "Error"})
-if __name__=='__main__':
-    if not os.path.exists('db.sqlite'):
-        db.create_all()
+
+if __name__== "__main__":
     app.run()
